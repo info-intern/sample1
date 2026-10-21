@@ -3,7 +3,7 @@
  * このファイルの役割: 画面の切り替え・描画・ボタン操作・toast（通知）を担当する。
  * マスタは data.js、保存は storage.js、読み取りは reader.js が担当し、ここから呼び出す。
  * 画面の部品は createElement と textContent で組み立てる（innerHTML は使わない）。
- * 4 つの画面（list / scan / detail / history）を 1 つの HTML の中で表示・非表示して切り替える。
+ * 5 つの画面（list / scan / detail / batch / history）を 1 つの HTML の中で表示・非表示して切り替える。
  */
 
 // ---------- 画面の状態（いま何を表示しているか） ----------
@@ -12,6 +12,7 @@ const state = {
   tab: 'list',           // 強調するタブ（詳細画面では元のタブ）
   backView: 'list',      // 詳細の「戻る」で戻る画面
   detailCode: null,      // 詳細に表示中の本のコード値
+  batchCodes: [],        // まとめて読み取ったコード値の配列（再読み取りまで残す。localStorage には保存しない）
   keyword: '',           // 検索ボックスの文字
   category: '',          // 選択中のカテゴリ（'' ならすべて）
   status: 'all',         // 状態の絞り込み（all / available / loaned）
@@ -23,6 +24,8 @@ const LOAN_DAYS = 14;        // 貸出期間（日）
 const MAX_NAME_LENGTH = 20;  // 借りる人の名前の最大文字数
 const LOCK_MS = 1500;        // 貸出・返却のあと、ボタンを押せなくする時間（ミリ秒）
 const CLEAR_CONFIRM_MS = 3000;   // 「履歴を消す」の 2 回目の押下を待つ時間（ミリ秒）
+const TOAST_MS = 3000;           // toast（通知）を表示しておく時間（ミリ秒）
+const SCAN_RESUME_MS = 3000;     // 読み取りボタンを無効にしておく最長の時間（ミリ秒）
 const STATUS_FILTERS = [
   { value: 'all', label: 'すべて' },
   { value: 'available', label: '在庫あり' },
@@ -106,7 +109,7 @@ function showToast(message, isError) {
   toast.textContent = message;
   toast.className = 'toast toast--show' + (isError ? ' toast--error' : '');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.className = 'toast'; }, 3000);
+  toastTimer = setTimeout(() => { toast.className = 'toast'; }, TOAST_MS);
 }
 
 // ---------- 貸出状態の判定 ----------
@@ -144,24 +147,34 @@ function createBadge(status) {
  */
 function spineClass(category, categories) {
   const index = Math.max(0, categories.indexOf(category));
+  // 背表紙の色は CSS の --spine-0〜--spine-7 の 8 色（カテゴリ 8 種）。8 で割った余りで色を選ぶ
   return 'spine--' + (index % 8);
 }
 
 // ---------- 画面の切り替え ----------
 
 /**
+ * 画面の名前から、強調するタブを決める。まとめて処理は「読み取り」タブの続きとして扱う。
+ * @param {string} viewName 画面の名前
+ * @returns {string} タブの名前（list / scan / history）
+ */
+function tabOfView(viewName) {
+  return viewName === 'batch' ? 'scan' : viewName;
+}
+
+/**
  * 指定した画面だけを表示し、タブの強調を更新する。
- * @param {string} viewName list / scan / detail / history
+ * @param {string} viewName list / scan / detail / batch / history
  */
 function showView(viewName) {
   const previousView = state.view;
   // 一覧から別の画面へ移るとき、戻ってきたときのためにスクロール位置を覚えておく
   if (previousView === 'list' && viewName !== 'list') state.listScrollY = window.scrollY;
   state.view = viewName;
-  ['list', 'scan', 'detail', 'history'].forEach((name) => {
+  ['list', 'scan', 'detail', 'batch', 'history'].forEach((name) => {
     document.getElementById('view-' + name).hidden = (name !== viewName);
   });
-  if (viewName !== 'detail') state.tab = viewName;
+  if (viewName !== 'detail') state.tab = tabOfView(viewName);
   document.querySelectorAll('.tabbar__button').forEach((button) => {
     const active = button.dataset.tab === state.tab;
     button.classList.toggle('tabbar__button--active', active);
@@ -169,7 +182,8 @@ function showView(viewName) {
     else button.removeAttribute('aria-current');
   });
   window.scrollTo(0, 0);
-  if (viewName === 'scan') document.getElementById('scan-button').disabled = false;   // 読み取りボタンを必ず押せる状態に戻す
+  if (viewName === 'scan') renderScan();
+  if (viewName === 'batch') renderBatch();   // 詳細から戻ったときも、最新の状態バッジにする
 
   if (viewName === 'list') {
     renderList();
@@ -182,12 +196,12 @@ function showView(viewName) {
 /**
  * 本の詳細画面を開く。
  * @param {string} code コード値
- * @param {string} fromView 戻る先の画面
+ * @param {string} fromView 戻る先の画面（list / scan / batch）
  */
 function openDetail(code, fromView) {
   state.detailCode = code;
   state.backView = fromView;
-  state.tab = fromView;
+  state.tab = tabOfView(fromView);
   renderDetail();
   showView('detail');
 }
@@ -271,9 +285,10 @@ function renderSegment() {
  * @param {object} book 本のデータ
  * @param {object} loans AppStorage.getLoans() の結果
  * @param {string[]} categories BookData.categories() の結果
+ * @param {string} [fromView] 詳細の「戻る」で戻る画面。省略すると一覧（list）
  * @returns {HTMLElement} li 要素
  */
-function createBookRow(book, loans, categories) {
+function createBookRow(book, loans, categories, fromView) {
   const item = createEl('li');
   const button = createEl('button', 'book ' + spineClass(book.category, categories));
   button.type = 'button';
@@ -289,7 +304,7 @@ function createBookRow(book, loans, categories) {
   button.appendChild(createEl('span', 'book__spine'));
   button.appendChild(body);
   button.appendChild(status);
-  button.addEventListener('click', () => openDetail(String(book.code), 'list'));
+  button.addEventListener('click', () => openDetail(String(book.code), fromView || 'list'));
   item.appendChild(button);
   return item;
 }
@@ -352,33 +367,48 @@ function addFact(dl, label, value) {
 }
 
 /**
- * 在庫ありのときの「貸出する」フォームを作る。
- * @param {object} book 本のデータ
+ * 名前の入力チェック。問題があればエラーメッセージを返す。
+ * @param {string} name 前後の空白を取った名前
+ * @returns {string} エラーメッセージ。問題なければ空文字
+ */
+function validateBorrowerName(name) {
+  if (name === '') return '名前を入力してください';
+  // 絵文字などサロゲートペアの文字を 1 文字として数えるため、length ではなく Array.from を使う
+  const length = Array.from(name).length;
+  if (length > MAX_NAME_LENGTH) return '名前は' + MAX_NAME_LENGTH + '文字以内で入力してください（現在 ' + length + ' 文字）';
+  return '';
+}
+
+/**
+ * 「借りる人の名前」の入力欄つきパネル（見出し・入力欄・エラー・ボタン）を作る。
+ * 詳細の「貸出する」と、まとめて処理の「まとめて貸出」で共通に使う。
+ * @param {string} title パネルの見出し
+ * @param {string} buttonText ボタンの文字
+ * @param {string} inputId 入力欄の id（同じ id が画面に 2 つ出ないよう、使う場所ごとに変える）
+ * @param {function(string):void} onSubmit 名前が正しいときに呼ぶ関数（チェック済みの名前を受け取る）
  * @returns {HTMLElement} パネル要素
  */
-function createLoanPanel(book) {
+function createBorrowerPanel(title, buttonText, inputId, onSubmit) {
   const panel = createEl('div', 'panel');
-  panel.appendChild(createEl('h3', 'panel__title', '貸出する'));
+  panel.appendChild(createEl('h3', 'panel__title', title));
 
   const label = createEl('label', 'form-label', '借りる人の名前');
-  label.htmlFor = 'borrower-input';
+  label.htmlFor = inputId;
   const input = createEl('input', 'field');
-  input.id = 'borrower-input';
+  input.id = inputId;
   input.type = 'text';
   input.autocomplete = 'off';
   input.placeholder = '例: 学生A（' + MAX_NAME_LENGTH + '文字まで）';
   const error = createEl('p', 'form-error');
   error.hidden = true;
-  const button = createEl('button', 'button button--loan', '貸出する');
+  const button = createEl('button', 'button button--loan', buttonText);
   button.type = 'button';
 
-  /** 名前をチェックして、正しければ貸出する */
-  const submitLoan = () => {
+  /** 名前をチェックして、正しければ onSubmit を呼ぶ */
+  const submit = () => {
     if (isLocked()) return;   // 直前の操作から間もないときは何もしない
     const name = input.value.trim();   // 前後の空白は取り除く
-    let message = '';
-    if (name === '') message = '名前を入力してください';
-    else if (name.length > MAX_NAME_LENGTH) message = '名前は' + MAX_NAME_LENGTH + '文字以内で入力してください（現在 ' + name.length + ' 文字）';
+    const message = validateBorrowerName(name);
     if (message) {
       error.textContent = message;
       error.hidden = false;
@@ -386,12 +416,12 @@ function createLoanPanel(book) {
       input.focus();
       return;
     }
-    loanBook(String(book.code), name);
+    onSubmit(name);
   };
-  button.addEventListener('click', submitLoan);
+  button.addEventListener('click', submit);
   input.addEventListener('keydown', (event) => {
     // IME の変換を確定する Enter（isComposing / keyCode 229）では貸出しない
-    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) submitLoan();
+    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) submit();
   });
   // 入力し直したら、前回のエラー表示（赤枠・文言）を消す
   input.addEventListener('input', () => {
@@ -405,6 +435,15 @@ function createLoanPanel(book) {
   panel.appendChild(error);
   panel.appendChild(button);
   return panel;
+}
+
+/**
+ * 在庫ありのときの「貸出する」フォームを作る。
+ * @param {object} book 本のデータ
+ * @returns {HTMLElement} パネル要素
+ */
+function createLoanPanel(book) {
+  return createBorrowerPanel('貸出する', '貸出する', 'borrower-input', (name) => loanBook(String(book.code), name));
 }
 
 /**
@@ -467,6 +506,33 @@ function renderDetail() {
 // ---------- 貸出・返却 ----------
 
 /**
+ * 貸出情報（借りた人・貸出日時・返却期限）を作る。返却期限は貸出日から LOAN_DAYS 日後。
+ * 1 冊ずつの貸出とまとめて貸出で共通に使う。
+ * @param {string} borrower 借りる人の名前
+ * @param {Date} now 貸出した日時
+ * @returns {{borrower: string, loanedAt: string, dueDate: string}} 貸出情報
+ */
+function buildLoan(borrower, now) {
+  const due = new Date(now.getTime());
+  due.setDate(due.getDate() + LOAN_DAYS);
+  return { borrower: borrower, loanedAt: now.toISOString(), dueDate: toDateString(due) };
+}
+
+/**
+ * 履歴 1 件分のデータを作る。id は「時刻-コード値」。
+ * 貸出・返却・まとめて処理で共通に使う。
+ * @param {string} type 'loan'（貸出）または 'return'（返却）
+ * @param {object} book 本のデータ
+ * @param {string} borrower 借りた人の名前
+ * @param {Date} now 操作した日時
+ * @returns {object} 履歴データ
+ */
+function buildHistoryEntry(type, book, borrower, now) {
+  const code = String(book.code);
+  return { id: String(now.getTime()) + '-' + code, type: type, code: code, title: book.title, borrower: borrower, at: now.toISOString() };
+}
+
+/**
  * 貸出処理。処理の直前に最新の状態を読み直して二重貸出を防ぐ。
  * @param {string} code コード値
  * @param {string} borrower 借りる人の名前（チェック済み）
@@ -481,15 +547,13 @@ function loanBook(code, borrower) {
     return;
   }
   const now = new Date();
-  const due = new Date(now.getTime());
-  due.setDate(due.getDate() + LOAN_DAYS);
-  loans[code] = { borrower: borrower, loanedAt: now.toISOString(), dueDate: toDateString(due) };
+  loans[code] = buildLoan(borrower, now);
 
   if (!AppStorage.saveLoans(loans)) {
     showToast('保存できませんでした（保存領域がいっぱいかもしれません）', true);
     return;
   }
-  const historySaved = AppStorage.addHistory({ id: String(now.getTime()) + '-' + code, type: 'loan', code: code, title: book.title, borrower: borrower, at: now.toISOString() });
+  const historySaved = AppStorage.addHistory(buildHistoryEntry('loan', book, borrower, now));
   if (historySaved) showToast('「' + book.title + '」を貸し出しました（返却期限 ' + loans[code].dueDate + '）');
   else showToast('貸し出しましたが履歴の保存に失敗しました', true);   // 貸出自体は成功している
   startLock();
@@ -517,7 +581,7 @@ function returnBook(code) {
     return;
   }
   const now = new Date();
-  const historySaved = AppStorage.addHistory({ id: String(now.getTime()) + '-' + code, type: 'return', code: code, title: book.title, borrower: loan.borrower, at: now.toISOString() });
+  const historySaved = AppStorage.addHistory(buildHistoryEntry('return', book, loan.borrower, now));
   if (historySaved) showToast('「' + book.title + '」を返却しました');
   else showToast('返却しましたが履歴の保存に失敗しました', true);   // 返却自体は成功している
   startLock();
@@ -527,7 +591,19 @@ function returnBook(code) {
 // ---------- 読み取り ----------
 
 /**
- * 読み取り（または手入力）で得たコード値を処理する。
+ * 読み取り画面を描き直す。2 つの読み取りボタンを押せる状態に戻し、
+ * 前回のまとめて読み取り結果が残っていれば「開く」ボタンを出す。
+ */
+function renderScan() {
+  document.getElementById('scan-button').disabled = false;        // 読み取りボタンを必ず押せる状態に戻す
+  document.getElementById('scan-many-button').disabled = false;
+  const resume = document.getElementById('scan-resume');
+  resume.hidden = state.batchCodes.length === 0;
+  resume.textContent = '前回の読み取り結果を開く（' + state.batchCodes.length + ' 件）';
+}
+
+/**
+ * 1 冊ずつ読み取ったコード値を処理する。
  * マスタにあれば詳細へ、無ければ toast を出してこの画面に留まる。
  * @param {string} code コード値
  */
@@ -540,20 +616,191 @@ function handleCode(code) {
 }
 
 /**
- * 「読み取る」ボタン。二重タップを防ぐため、読み取り中はボタンを無効にする。
- * カメラをキャンセルするとコールバックが来ない端末があるため、3 秒後にも必ず有効に戻す。
+ * まとめて読み取ったコード値の配列を覚えて、まとめて処理の画面を開く。
+ * 未登録のコードも「未登録」の行として一覧に出す。
+ * @param {string[]} codes コード値の配列（重複なし）
  */
-function startScan() {
-  const button = document.getElementById('scan-button');
-  button.disabled = true;
+function handleCodes(codes) {
+  state.batchCodes = codes;
+  showView('batch');
+}
+
+/**
+ * 「読み取る」ボタン。二重タップを防ぐため、読み取り中は 2 つのボタンを無効にする。
+ * カメラをキャンセルするとコールバックが来ない端末があるため、3 秒後にも必ず有効に戻す。
+ * @param {boolean} isMany true ならまとめて読み取り、false なら 1 冊ずつ
+ */
+function startScan(isMany) {
+  if (!document.getElementById('manual-modal').hidden) return;   // 手入力モーダルが開いている間は二重に開かない
+  const buttons = [document.getElementById('scan-button'), document.getElementById('scan-many-button')];
+  buttons.forEach((button) => { button.disabled = true; });
   /** 読み取りボタンを押せる状態に戻す */
-  const finish = () => { button.disabled = false; };
-  setTimeout(finish, 3000);
-  AppReader.readOne(
-    (code) => { finish(); handleCode(code); },
-    (message) => { finish(); showToast(message, true); },
-    finish
-  );
+  const finish = () => { buttons.forEach((button) => { button.disabled = false; }); };
+  // 手入力モーダルが表示中は戻さない（モーダルを閉じたときに finish が呼ばれる）
+  setTimeout(() => {
+    if (document.getElementById('manual-modal').hidden) finish();
+  }, SCAN_RESUME_MS);
+  /** 失敗したとき: ボタンを戻して toast を出す */
+  const fail = (message) => { finish(); showToast(message, true); };
+  if (isMany) {
+    AppReader.readMany((codes) => { finish(); handleCodes(codes); }, fail, finish);
+  } else {
+    AppReader.readOne((code) => { finish(); handleCode(code); }, fail, finish);
+  }
+}
+
+// ---------- まとめて処理 ----------
+
+/**
+ * 読み取ったコードを、状態ごとの数に分けて数える。
+ * @param {string[]} codes コード値の配列
+ * @param {object} loans AppStorage.getLoans() の結果
+ * @returns {{available: string[], loaned: string[], unknown: string[]}} 在庫あり・貸出中（延滞を含む）・未登録のコード
+ */
+function classifyBatch(codes, loans) {
+  const result = { available: [], loaned: [], unknown: [] };
+  codes.forEach((code) => {
+    if (!BookData.find(code)) result.unknown.push(code);
+    else if (loans[code]) result.loaned.push(code);
+    else result.available.push(code);
+  });
+  return result;
+}
+
+/**
+ * まとめて処理の一覧の「未登録」の行（蔵書にないコード）を作る。
+ * @param {string} code コード値
+ * @returns {HTMLElement} li 要素
+ */
+function createUnknownRow(code) {
+  const item = createEl('li');
+  const row = createEl('div', 'book book--unknown');
+  row.appendChild(createEl('span', 'book__spine'));
+  const body = createEl('div', 'book__body');
+  body.appendChild(createEl('p', 'book__title', '未登録（値: ' + code + '）'));
+  body.appendChild(createEl('p', 'book__meta', '蔵書にないコードです'));
+  row.appendChild(body);
+  item.appendChild(row);
+  return item;
+}
+
+/**
+ * まとめて処理の「ボタンだけのパネル」（まとめて返却、または貸出できる本が無いとき）を作る。
+ * 対象が 0 冊のときはボタンを無効にして理由を出す。
+ * @param {string} title パネルの見出し
+ * @param {string} buttonText ボタンの文字
+ * @param {string[]} targets 処理の対象になるコード値
+ * @param {string} emptyText 対象が 0 冊のときに出す文
+ * @param {function():void} onClick ボタンが押されたときに呼ぶ関数
+ * @returns {HTMLElement} パネル要素
+ */
+function createBatchPanel(title, buttonText, targets, emptyText, onClick) {
+  const panel = createEl('div', 'panel');
+  panel.appendChild(createEl('h3', 'panel__title', title));
+  const button = createEl('button', 'button', buttonText);
+  button.type = 'button';
+  if (targets.length === 0) {
+    button.disabled = true;   // 対象が無いときはずっと押せない
+    panel.appendChild(createEl('p', 'panel__text', emptyText));
+  } else {
+    button.addEventListener('click', () => {
+      if (isLocked()) return;   // 直前の操作から間もないときは何もしない
+      onClick();
+    });
+    applyLock(button);
+  }
+  panel.appendChild(button);
+  return panel;
+}
+
+/**
+ * まとめて処理画面を描き直す（state.batchCodes の本）。
+ * 貸出状態は最初に 1 回だけ読む。対象の本は「いま描いた時点の状態」で決める。
+ */
+function renderBatch() {
+  const view = document.getElementById('view-batch');
+  clearChildren(view);
+  const loans = AppStorage.getLoans();
+  const categories = BookData.categories();
+  const groups = classifyBatch(state.batchCodes, loans);
+
+  const back = createEl('button', 'back-button', '‹ 戻る');
+  back.type = 'button';
+  back.addEventListener('click', () => showView('scan'));
+  view.appendChild(back);
+
+  view.appendChild(createEl('h2', 'batch__title', 'まとめて処理'));
+  view.appendChild(createEl('p', 'batch__summary',
+    '読み取り ' + state.batchCodes.length + ' 件: 在庫あり ' + groups.available.length +
+    '・貸出中 ' + groups.loaned.length + '・未登録 ' + groups.unknown.length));
+
+  const list = createEl('ul', 'book-list');
+  state.batchCodes.forEach((code) => {
+    const book = BookData.find(code);
+    list.appendChild(book ? createBookRow(book, loans, categories, 'batch') : createUnknownRow(code));
+  });
+  view.appendChild(list);
+
+  // まとめて貸出（対象は在庫ありの本だけ）。名前は 1 回だけ入力する
+  if (groups.available.length === 0) {
+    view.appendChild(createBatchPanel('まとめて貸出', 'まとめて貸出', [], '貸出できる本がありません', null));
+  } else {
+    view.appendChild(createBorrowerPanel('まとめて貸出（' + groups.available.length + ' 冊）', 'まとめて貸出', 'batch-borrower-input',
+      (name) => processBatch('loan', groups.available, name)));
+  }
+  // まとめて返却（対象は貸出中の本だけ）
+  view.appendChild(createBatchPanel('まとめて返却（' + groups.loaned.length + ' 冊）', 'まとめて返却', groups.loaned,
+    '返却できる本がありません', () => processBatch('return', groups.loaned, '')));
+}
+
+/**
+ * まとめて貸出・まとめて返却の処理。
+ * 処理の直前に localStorage を読み直して状態を確かめ、状態が変わっていた本はスキップする。
+ * @param {string} type 'loan'（貸出）または 'return'（返却）
+ * @param {string[]} targets 画面に出ていた時点での対象のコード値
+ * @param {string} borrower 借りる人の名前（貸出のときだけ使う。チェック済み）
+ */
+function processBatch(type, targets, borrower) {
+  const isLoan = type === 'loan';
+  const actionName = isLoan ? '貸出' : '返却';
+  const loans = AppStorage.getLoans();   // 最新の状態を読み直す
+  const now = new Date();
+
+  const doneBooks = [];   // 実際に処理した本（履歴に残す）
+  let skipped = 0;        // 状態が変わっていて、スキップした冊数
+  targets.forEach((code) => {
+    const book = BookData.find(code);
+    if (!book) return;
+    // 貸出は「まだ貸出中でない」本、返却は「まだ貸出中」の本だけ処理できる
+    if (isLoan === Boolean(loans[code])) {
+      skipped += 1;
+      return;
+    }
+    doneBooks.push({ book: book, borrower: isLoan ? borrower : loans[code].borrower });
+    if (isLoan) loans[code] = buildLoan(borrower, now);
+    else delete loans[code];
+  });
+
+  const suffix = skipped > 0 ? '（スキップ ' + skipped + ' 冊）' : '';
+  if (doneBooks.length === 0) {
+    showToast(actionName + ' 0 冊' + suffix + '。状態が変わっていました', true);
+    renderBatch();
+    return;
+  }
+  if (!AppStorage.saveLoans(loans)) {
+    showToast('保存できませんでした（保存領域がいっぱいかもしれません）', true);
+    return;
+  }
+  // 履歴は 1 冊ずつ残す
+  let historyFailed = false;
+  doneBooks.forEach((item) => {
+    const saved = AppStorage.addHistory(buildHistoryEntry(type, item.book, item.borrower, now));
+    if (!saved) historyFailed = true;
+  });
+  if (historyFailed) showToast(actionName + ' ' + doneBooks.length + ' 冊' + suffix + '。ただし履歴の保存に失敗しました', true);   // 貸出・返却自体は成功している
+  else showToast(actionName + ' ' + doneBooks.length + ' 冊' + suffix);
+  startLock();
+  renderBatch();
 }
 
 // ---------- 履歴 ----------
@@ -625,7 +872,9 @@ function bindEvents() {
     state.keyword = event.target.value;
     renderList();
   });
-  document.getElementById('scan-button').addEventListener('click', startScan);
+  document.getElementById('scan-button').addEventListener('click', () => startScan(false));
+  document.getElementById('scan-many-button').addEventListener('click', () => startScan(true));
+  document.getElementById('scan-resume').addEventListener('click', () => showView('batch'));
   document.getElementById('history-clear').addEventListener('click', clearHistoryWithConfirm);
 }
 
@@ -637,6 +886,11 @@ async function init() {
   const ok = await BookData.load();
   if (!ok) {
     showToast('蔵書データを読み込めませんでした', true);
+    // 一覧の「該当なし」の表示を流用して、読み込めなかったことを画面にも出す
+    const empty = document.getElementById('list-empty');
+    empty.textContent = '蔵書データを読み込めませんでした。ページを再読み込みしてください';
+    empty.hidden = false;
+    showView('list'); // タブの強調だけは付けておく（蔵書 0 件の一覧として表示）
     return;
   }
   document.getElementById('scan-env').textContent = AppReader.isAvailable()

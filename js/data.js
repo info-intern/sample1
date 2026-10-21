@@ -12,14 +12,14 @@ const BookData = {
 
   /**
    * マスタを読み込む。成功すると BookData.books / byCode が埋まる。
-   * キャッシュ対策として ?v=1 を付け、cache: 'no-store' で毎回取りに行く。
+   * キャッシュ対策として ?v=2 を付け、cache: 'no-store' で毎回取りに行く。
    * マスタを差し替えたら v の数字を上げると確実に反映される。
    * @returns {Promise<boolean>} 読み込めたら true
    */
   async load() {
     let json = null;
     try {
-      const response = await fetch('data/books.json?v=1', { cache: 'no-store' });
+      const response = await fetch('data/books.json?v=2', { cache: 'no-store' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       json = await response.json();
     } catch (error) {
@@ -41,7 +41,9 @@ const BookData = {
    * @returns {boolean} { books: [...] } の形なら true
    */
   isValid(json) {
-    return Boolean(json) && Array.isArray(json.books);
+    // books が配列で、各要素が code を持つオブジェクトであることまで確認する
+    return Boolean(json) && Array.isArray(json.books)
+      && json.books.every((book) => Boolean(book) && book.code != null);
   },
 
   /**

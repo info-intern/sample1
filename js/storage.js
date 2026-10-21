@@ -46,13 +46,15 @@ const AppStorage = {
    * 貸出 1 件の形が正しいか調べる。
    * 値が null や { } のような壊れたデータのまま画面に出して、例外で落ちるのを防ぐ。
    * @param {*} loan 貸出情報
-   * @returns {boolean} borrower・loanedAt・dueDate が文字列のオブジェクトなら true
+   * @returns {boolean} borrower・loanedAt・dueDate が文字列で、dueDate が YYYY-MM-DD・loanedAt が日付として読めるなら true
    */
   isValidLoan(loan) {
     return Boolean(loan) && typeof loan === 'object' &&
       typeof loan.borrower === 'string' &&
       typeof loan.loanedAt === 'string' &&
-      typeof loan.dueDate === 'string';
+      typeof loan.dueDate === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(loan.dueDate) &&    // 返却期限は YYYY-MM-DD の形
+      !Number.isNaN(Date.parse(loan.loanedAt));       // 貸出日時は日付として読めるもの
   },
 
   /**

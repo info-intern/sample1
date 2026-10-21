@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f4c4a">
   <title>図書貸出管理</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
   <div class="app">
@@ -32,14 +32,22 @@
 
       <!-- 読み取り -->
       <section class="view" id="view-scan" hidden>
-        <p class="scan__lead">本に貼られたカメレオンコードを読み取ると、その本の詳細が開きます。</p>
-        <button class="button button--big" id="scan-button" type="button">カメレオンコードを読み取る</button>
+        <p class="scan__lead">本に貼られたカメレオンコードを読み取ります。1 冊ずつなら本の詳細、まとめてなら読み取った本の一覧（まとめて処理）が開きます。</p>
+        <div class="scan__buttons">
+          <button class="button button--big" id="scan-button" type="button">1 冊ずつ読み取る</button>
+          <button class="button button--big button--ghost" id="scan-many-button" type="button">まとめて読み取る</button>
+        </div>
+        <p class="scan__hint">複数の本のコードをまとめて写すと、一度に貸出・返却できます</p>
+        <button class="button button--ghost scan__resume" id="scan-resume" type="button" hidden></button>
         <p class="scan__env" id="scan-env"></p>
         <p class="scan__note" id="scan-note" hidden>PC では手入力で代用できます（1〜100 の番号を入力）。</p>
       </section>
 
       <!-- 詳細（中身は app.js が作る） -->
       <section class="view" id="view-detail" hidden></section>
+
+      <!-- まとめて処理（中身は app.js が作る） -->
+      <section class="view" id="view-batch" hidden></section>
 
       <!-- 履歴 -->
       <section class="view" id="view-history" hidden>
@@ -62,8 +70,8 @@
   <!-- PC 用の手入力モーダル -->
   <div class="modal" id="manual-modal" hidden>
     <form class="modal__box" id="manual-form" novalidate>
-      <h2 class="modal__title">コード番号を入力</h2>
-      <p class="modal__text">PC では読み取りの代わりに、1〜100 の番号を入力します。</p>
+      <h2 class="modal__title" id="manual-title">コード番号を入力</h2>
+      <p class="modal__text" id="manual-text">PC では読み取りの代わりに、1〜100 の番号を入力します。</p>
       <input class="field" id="manual-input" type="text" inputmode="numeric" autocomplete="off" placeholder="例: 7" aria-label="コード番号">
       <p class="form-error" id="manual-error" hidden></p>
       <div class="modal__buttons">
@@ -75,10 +83,10 @@
 
   <div class="toast" id="toast" role="status"></div>
 
-  <script src="data/books.js?v=1"></script>
-  <script src="js/data.js?v=1"></script>
-  <script src="js/storage.js?v=1"></script>
-  <script src="js/reader.js?v=1"></script>
-  <script src="js/app.js?v=1"></script>
+  <script src="data/books.js?v=2"></script>
+  <script src="js/data.js?v=2"></script>
+  <script src="js/storage.js?v=2"></script>
+  <script src="js/reader.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
