@@ -1,0 +1,394 @@
+/*
+ * css/style.css
+ * このファイルの役割: 図書貸出管理アプリの見た目をすべて決める。
+ * 色・余白は :root のカスタムプロパティ（--で始まる変数）にまとめてあり、
+ * 色を変えたいときはここだけ直せばよい。クラス名は 「ブロック__要素--状態」 の BEM 風。
+ * 配色の考え方: 図書館の深い緑（見出し・タブ）＋ 貸出スタンプの琥珀色 ＋ 期限超過の赤。
+ */
+
+:root {
+  --bg: #e8ede9;          /* 画面の背景（やや緑がかった灰色） */
+  --surface: #fbfcfa;     /* カード・入力欄の背景 */
+  --ink: #17252b;         /* 本文の文字色 */
+  --ink-sub: #566a6f;     /* 補足の文字色 */
+  --line: #cdd8d2;        /* 罫線 */
+  --brand: #0f4c4a;       /* 主役の深緑 */
+  --brand-soft: #d3e6df;  /* 深緑の薄い版 */
+  --ok: #2f7d4f;          /* 在庫あり */
+  --loan: #a8650f;        /* 貸出中（スタンプの琥珀色） */
+  --late: #a6362f;        /* 延滞 */
+  --white: #fff;          /* 濃い背景の上の文字色 */
+  --accent: #e2a336;      /* アクセント（選択中タブの線・toast の線） */
+  --error-soft: #e9c7c4;  /* 入力エラーの枠の外側の色 */
+  --error-light: #e66a62; /* toast のエラー線 */
+  --toast-bg: #1d2e33;    /* toast の背景 */
+  --header-ink: #f1f7f4;  /* ヘッダーの文字色 */
+  --tab-ink: #b9d3cb;     /* 選ばれていないタブの文字色 */
+  --overlay: rgba(15, 30, 32, 0.55);  /* モーダルの後ろの暗幕 */
+  --spine-0: #0f4c4a;     /* 背表紙の色（カテゴリ順に 0〜7） */
+  --spine-1: #8a5a2b;
+  --spine-2: #3d5a80;
+  --spine-3: #7a3b5e;
+  --spine-4: #5f7a2e;
+  --spine-5: #b5792a;
+  --spine-6: #4a4e69;
+  --spine-7: #2f7d6d;
+  --radius: 10px;
+  --tab-h: 60px;
+  --font-body: -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-title: "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif;
+}
+
+/* hidden 属性を確実に効かせる（display を指定したクラスに負けないように） */
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input { font: inherit; color: inherit; touch-action: manipulation; }   /* iPhone のダブルタップ拡大を抑える */
+
+button { cursor: pointer; }
+
+:focus-visible { outline: 3px solid var(--loan); outline-offset: 2px; }
+
+/* ---------- 全体の枠 ---------- */
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  /* 下部タブバーに隠れないように余白を取る */
+  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 24px);
+}
+
+.header {
+  background: var(--brand);
+  color: var(--header-ink);
+  padding: calc(env(safe-area-inset-top) + 14px) 16px 14px;
+}
+
+.header__title {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+}
+
+.view { padding: 16px; }
+
+/* ---------- サマリー（蔵書数・貸出中・延滞） ---------- */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 0 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.summary__item {
+  padding: 10px 4px;
+  text-align: center;
+  border-left: 1px solid var(--line);
+}
+.summary__item:first-child { border-left: none; }
+
+.summary__label { display: block; font-size: 14px; color: var(--ink-sub); }
+
+.summary__value {
+  display: block;
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.summary__item--loan .summary__value { color: var(--loan); }
+.summary__item--late .summary__value { color: var(--late); }
+
+/* ---------- 検索・絞り込み ---------- */
+.field {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.field--error { border-color: var(--late); box-shadow: 0 0 0 2px var(--error-soft); }
+
+.chips {
+  display: flex;
+  gap: 8px;
+  margin: 12px -16px 0;
+  padding: 0 16px 4px;
+  overflow-x: auto;          /* チップの行だけ横にスクロール（ページ全体は動かない） */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;     /* スクロールバーは隠す（指でスワイプできる） */
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: none;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  white-space: nowrap;
+}
+.chip--active { background: var(--brand); border-color: var(--brand); color: var(--white); }
+
+.segment {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 12px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.segment__button {
+  min-height: 44px;
+  background: var(--surface);
+  border: none;
+  border-left: 1px solid var(--brand);
+}
+.segment__button:first-child { border-left: none; }
+.segment__button--active { background: var(--brand); color: var(--white); }
+
+.result-count { margin: 16px 0 8px; font-size: 14px; color: var(--ink-sub); }
+
+/* ---------- 蔵書リスト（背表紙つき） ---------- */
+.book-list { list-style: none; margin: 0; padding: 0; }
+
+.book {
+  display: flex;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 0;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 背表紙: カテゴリごとに色を変える（--spine は spine--0〜7 で指定） */
+.book__spine { flex: none; width: 10px; background: var(--spine, var(--brand)); }
+
+.book__body { flex: 1; min-width: 0; padding: 10px 12px; }
+
+.book__title {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.book__meta { margin: 2px 0 0; font-size: 14px; color: var(--ink-sub); overflow-wrap: anywhere; }
+
+.book__status { flex: none; align-self: center; padding-right: 12px; }
+
+.spine--0 { --spine: var(--spine-0); }
+.spine--1 { --spine: var(--spine-1); }
+.spine--2 { --spine: var(--spine-2); }
+.spine--3 { --spine: var(--spine-3); }
+.spine--4 { --spine: var(--spine-4); }
+.spine--5 { --spine: var(--spine-5); }
+.spine--6 { --spine: var(--spine-6); }
+.spine--7 { --spine: var(--spine-7); }
+
+/* ---------- 状態バッジ（スタンプ風） ---------- */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.badge--ok { color: var(--ok); }
+.badge--loan { color: var(--loan); }
+.badge--late { color: var(--late); transform: rotate(-3deg); }
+
+.empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--ink-sub);
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+/* ---------- ボタン ---------- */
+.button {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  font-weight: 700;
+  color: var(--white);
+  background: var(--brand);
+  border: none;
+  border-radius: var(--radius);
+}
+.button:disabled { opacity: 0.5; cursor: default; }   /* 押せないとき（直後のダブルタップ対策中など）は薄くする */
+.button--loan { background: var(--loan); }
+.button--ghost { color: var(--brand); background: transparent; border: 1px solid var(--brand); }
+.button--danger { color: var(--late); background: transparent; border: 1px solid var(--late); }
+.button--big { min-height: 88px; font-family: var(--font-title); font-size: 20px; }
+
+.back-button {
+  min-height: 44px;
+  margin: -8px 0 8px -8px;
+  padding: 0 8px;
+  color: var(--brand);
+  font-weight: 700;
+  background: none;
+  border: none;
+}
+
+/* ---------- 読み取り画面 ---------- */
+.scan__lead { margin: 0 0 16px; color: var(--ink-sub); }
+.scan__note {
+  margin: 16px 0 0;
+  padding: 12px;
+  font-size: 14px;
+  color: var(--ink-sub);
+  background: var(--brand-soft);
+  border-radius: var(--radius);
+}
+.scan__env { margin: 12px 0 0; font-size: 14px; font-weight: 700; }
+
+/* ---------- 詳細画面 ---------- */
+.detail__card {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 10px solid var(--spine, var(--brand));
+  border-radius: var(--radius);
+}
+.detail__title {
+  margin: 0 0 4px;
+  font-family: var(--font-title);
+  font-size: 24px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.detail__author { margin: 0 0 12px; color: var(--ink-sub); }
+
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
+.facts dt { color: var(--ink-sub); font-size: 14px; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.detail__summary { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+
+.panel {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.panel__title { margin: 0 0 8px; font-size: 16px; }
+.panel__text { margin: 4px 0; }
+.panel .button { margin-top: 12px; }
+
+.form-label { display: block; margin-bottom: 6px; font-weight: 700; }
+.form-error { margin: 6px 0 0; color: var(--late); font-size: 14px; font-weight: 700; }
+
+/* ---------- 履歴 ---------- */
+.history__count { margin: 0 0 8px; color: var(--ink-sub); }
+.history-list { list-style: none; margin: 0 0 16px; padding: 0; }
+.history-item {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.history-item__top { display: flex; align-items: center; gap: 8px; }
+.history-item__at { margin-left: auto; font-size: 14px; color: var(--ink-sub); }
+.history-item__title { margin: 4px 0 0; font-family: var(--font-title); font-weight: 700; overflow-wrap: anywhere; }
+.history-item__who { margin: 0; font-size: 14px; color: var(--ink-sub); overflow-wrap: anywhere; }
+
+/* ---------- 下部タブバー ---------- */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  justify-content: center;
+  background: var(--brand);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+.tabbar__inner { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; max-width: 480px; }
+.tabbar__button {
+  min-height: var(--tab-h);
+  color: var(--tab-ink);
+  font-size: 14px;
+  background: none;
+  border: none;
+  border-top: 4px solid transparent;
+}
+.tabbar__button--active { color: var(--white); font-weight: 700; border-top-color: var(--accent); }
+
+/* ---------- 手入力モーダル ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--overlay);
+}
+.modal__box {
+  width: 100%;
+  max-width: 480px;
+  padding: 20px 16px calc(env(safe-area-inset-bottom) + 20px);
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+}
+.modal__title { margin: 0 0 4px; font-family: var(--font-title); font-size: 20px; }
+.modal__text { margin: 0 0 12px; font-size: 14px; color: var(--ink-sub); }
+.modal__buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+.modal__buttons .button { margin: 0; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  left: 16px; right: 16px;
+  bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 12px);
+  max-width: 448px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  color: var(--white);
+  background: var(--toast-bg);
+  border-left: 6px solid var(--accent);
+  border-radius: var(--radius);
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.toast--show { opacity: 1; }
+.toast--error { border-left-color: var(--error-light); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}

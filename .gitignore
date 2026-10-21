@@ -1,8 +1,9 @@
-# 手元でだけ使うファイル（このリポジトリは公開されるのでコミットしない）
+# 手元でだけ使うファイル（公開リポジトリになり得るのでコミットしない）
 CLAUDE.md
 reference.md
 prompt.md
 プロンプトテンプレート.md
+.claude/
 
 # 作業用
 tasks/
@@ -11,3 +12,4 @@ _chrome_profile*/
 
 # OS が作るファイル
 .DS_Store
+Thumbs.db

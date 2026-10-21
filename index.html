@@ -1,11 +1,84 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>__REPO__</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f4c4a">
+  <title>図書貸出管理</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/style.css?v=1">
 </head>
 <body>
-    <h1>Hello World - __REPO__</h1>
+  <div class="app">
+    <header class="header">
+      <h1 class="header__title">図書貸出管理</h1>
+    </header>
+
+    <main>
+      <!-- 蔵書一覧（ホーム） -->
+      <section class="view" id="view-list">
+        <dl class="summary">
+          <div class="summary__item"><dt class="summary__label">蔵書数</dt><dd class="summary__value" id="sum-total">0</dd></div>
+          <div class="summary__item summary__item--loan"><dt class="summary__label">貸出中</dt><dd class="summary__value" id="sum-loan">0</dd></div>
+          <div class="summary__item summary__item--late"><dt class="summary__label">延滞</dt><dd class="summary__value" id="sum-late">0</dd></div>
+        </dl>
+        <input class="field" id="search-input" type="search" placeholder="書名・著者で検索" aria-label="書名・著者で検索" autocomplete="off">
+        <div class="chips" id="chips" role="group" aria-label="カテゴリ"></div>
+        <div class="segment" id="segment" role="group" aria-label="状態"></div>
+        <p class="result-count" id="result-count"></p>
+        <ul class="book-list" id="book-list"></ul>
+        <p class="empty" id="list-empty" hidden>該当する本がありません</p>
+      </section>
+
+      <!-- 読み取り -->
+      <section class="view" id="view-scan" hidden>
+        <p class="scan__lead">本に貼られたカメレオンコードを読み取ると、その本の詳細が開きます。</p>
+        <button class="button button--big" id="scan-button" type="button">カメレオンコードを読み取る</button>
+        <p class="scan__env" id="scan-env"></p>
+        <p class="scan__note" id="scan-note" hidden>PC では手入力で代用できます（1〜100 の番号を入力）。</p>
+      </section>
+
+      <!-- 詳細（中身は app.js が作る） -->
+      <section class="view" id="view-detail" hidden></section>
+
+      <!-- 履歴 -->
+      <section class="view" id="view-history" hidden>
+        <p class="history__count" id="history-count"></p>
+        <ul class="history-list" id="history-list"></ul>
+        <p class="empty" id="history-empty" hidden>まだ操作がありません</p>
+        <button class="button button--danger" id="history-clear" type="button">履歴をすべて消す</button>
+      </section>
+    </main>
+  </div>
+
+  <nav class="tabbar" aria-label="メニュー">
+    <div class="tabbar__inner">
+      <button class="tabbar__button" type="button" data-tab="list">蔵書一覧</button>
+      <button class="tabbar__button" type="button" data-tab="scan">読み取り</button>
+      <button class="tabbar__button" type="button" data-tab="history">履歴</button>
+    </div>
+  </nav>
+
+  <!-- PC 用の手入力モーダル -->
+  <div class="modal" id="manual-modal" hidden>
+    <form class="modal__box" id="manual-form" novalidate>
+      <h2 class="modal__title">コード番号を入力</h2>
+      <p class="modal__text">PC では読み取りの代わりに、1〜100 の番号を入力します。</p>
+      <input class="field" id="manual-input" type="text" inputmode="numeric" autocomplete="off" placeholder="例: 7" aria-label="コード番号">
+      <p class="form-error" id="manual-error" hidden></p>
+      <div class="modal__buttons">
+        <button class="button button--ghost" id="manual-cancel" type="button">キャンセル</button>
+        <button class="button" id="manual-ok" type="submit">決定</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="data/books.js?v=1"></script>
+  <script src="js/data.js?v=1"></script>
+  <script src="js/storage.js?v=1"></script>
+  <script src="js/reader.js?v=1"></script>
+  <script src="js/app.js?v=1"></script>
 </body>
 </html>
