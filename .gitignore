@@ -1,0 +1,13 @@
+# 手元でだけ使うファイル（このリポジトリは公開されるのでコミットしない）
+CLAUDE.md
+reference.md
+prompt.md
+プロンプトテンプレート.md
+
+# 作業用
+tasks/
+docs/
+_chrome_profile*/
+
+# OS が作るファイル
+.DS_Store
